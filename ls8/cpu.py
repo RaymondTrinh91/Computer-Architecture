@@ -6,6 +6,8 @@ LDI = 0b10000010
 PRN = 0b01000111
 HLT = 0b00000001
 MUL = 0b10100010
+PUSH = 0b01000101
+POP = 0b01000110
 
 class CPU:
     """Main CPU class."""
@@ -17,26 +19,46 @@ class CPU:
         self.reg = [0] * 8
         self.ir = 0b00000000
 
+        self.reg[7] = self.ram[0xF4]
+        self.sp = self.reg[7]
+
         self.op_codes = {
-            LDI : self.run_LDI,
-            PRN : self.run_PRN,
-            MUL : self.run_MUL
+            HLT: self.run_HLT,
+            LDI: self.run_LDI,
+            PRN: self.run_PRN,
+            PUSH: self.run_PUSH,
+            POP: self.run_POP
         }
         pass
 
-    def run_LDI(self):
-        op_a = self.ram_read(self.pc + 1)
-        op_b = self.ram_read(self.pc + 2)
+    def op_helper(self, inst):
+        params = (inst & 0b11000000) >> 6
+        if params == 1:
+            op_a = self.ram_read(self.pc + 1)
+            self.op_codes[inst](op_a)
+        elif params == 2:
+            op_a = self.ram_read(self.pc + 1)
+            op_b = self.ram_read(self.pc + 2)
+            self.op_codes[inst](op_a, op_b)
+        else:
+            self.op_codes[inst]()
+            
+    def run_HLT(self):
+        sys.exit()
+
+    def run_LDI(self, op_a, op_b):
         self.reg[op_a] = op_b
 
-    def run_PRN(self):
-        op = self.ram_read(self.pc + 1)
-        print(self.reg[op])
+    def run_PRN(self, op_a):
+        print(self.reg[op_a])
     
-    def run_MUL(self):
-        op_a = self.ram_read(self.pc + 1)
-        op_b = self.ram_read(self.pc + 2)
-        self.alu("MUL", op_a, op_b)
+    def run_PUSH(self, op_a):
+        self.sp -= 1
+        self.ram[self.sp] = self.reg[op_a]
+
+    def run_POP(self, op_a):
+        self.reg[op_a] = self.ram[self.sp]
+        self.sp += 1
 
     def load(self):
         """Load a program into memory."""
@@ -65,7 +87,7 @@ class CPU:
             self.reg[reg_a] += self.reg[reg_b]
         elif op == "SUB":
             self.reg[reg_a] -= self.reg[reg_b]
-        elif op == "MUL":
+        elif op == MUL: #MUL
             self.reg[reg_a] *= self.reg[reg_b]
         elif op == "DIV":
             self.reg[reg_a] /= self.reg[reg_b]
@@ -97,11 +119,15 @@ class CPU:
         reading = True
         while reading:
             self.ir = self.ram_read(self.pc)
-            inst_len = ((self.ir & 0b11000000) >> 6) + 1 
-            if self.ir == HLT:
-                reading = False
-                sys.exit()
+            inst_len = ((self.ir & 0b11000000) >> 6) + 1
+            inst_alu = ((self.ir & 0b00100000) >> 5)
+
+            if inst_alu:
+                self.alu(self.ir, self.ram_read(self.pc + 1), self.ram_read(self.pc + 2))
+            elif self.op_codes.get(self.ir):
+                self.op_helper(self.ir)
             else:
-                self.op_codes[self.ir]()
+                print("UNKNOWN OPCODE")
+                running = False
             self.pc += inst_len
 
